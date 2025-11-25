@@ -510,7 +510,7 @@ Resources:
       BgpAsn: !Ref CgwAsn
       IpAddress: !If
         - DoSimOnPrem
-        - !Ref OnPremRouterEip
+        - !GetAtt OnPremRouterEip.PublicIp
         - !Ref CgwIpAddress
       Type: ipsec.1
       Tags:
@@ -609,14 +609,19 @@ Outputs:
   SimulatedOnPremEnabled:
     Value: !Ref SimulateOnPrem
 
-  OnPremRouterEip:
+  OnPremRouterEipAllocationId:
     Condition: DoSimOnPrem
+    Description: AllocationId for the simulated on-prem EIP
     Value: !Ref OnPremRouterEip
-    Description: Elastic IP used for the Customer Gateway and pfSense UI
+
+  OnPremRouterEipAddress:
+    Condition: DoSimOnPrem
+    Description: Public IP used by the Customer Gateway & pfSense UI
+    Value: !GetAtt OnPremRouterEip.PublicIp
 
   OnPremRouterUiUrl:
     Condition: DoSimOnPrem
-    Value: !Sub 'https://${OnPremRouterEip}'
+    Value: !Sub 'https://${OnPremRouterEip.PublicIp}'
     Description: pfSense Web UI (allowlisted by AdminCidr)
 
   OnPremServerPrivateIp:
