@@ -1,0 +1,94 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "s2s-tgw-sim"
+  },
+  {
+    "ParameterKey": "SimulateOnPrem",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "AdminCidr",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "KeyPairName",
+    "ParameterValue": "NONE"
+  },
+  {
+    "ParameterKey": "VpcCidr",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "TgwSubnet1Cidr",
+    "ParameterValue": "10.0.0.0/24"
+  },
+  {
+    "ParameterKey": "TgwSubnet2Cidr",
+    "ParameterValue": "10.0.1.0/24"
+  },
+  {
+    "ParameterKey": "AmazonSideAsn",
+    "ParameterValue": "64512"
+  },
+  {
+    "ParameterKey": "VpnEcmpSupport",
+    "ParameterValue": "enable"
+  },
+  {
+    "ParameterKey": "CgwAsn",
+    "ParameterValue": "65010"
+  },
+  {
+    "ParameterKey": "OnPremCidr",
+    "ParameterValue": "192.168.0.0/16"
+  },
+  {
+    "ParameterKey": "CgwIpAddress",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "EnableAcceleration",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "TunnelInsideIpVersion",
+    "ParameterValue": "ipv4"
+  },
+  {
+    "ParameterKey": "IKEVersion",
+    "ParameterValue": "ikev2"
+  },
+  {
+    "ParameterKey": "Tunnel1InsideCidr",
+    "ParameterValue": "169.254.110.0/30"
+  },
+  {
+    "ParameterKey": "Tunnel2InsideCidr",
+    "ParameterValue": "169.254.111.0/30"
+  },
+  {
+    "ParameterKey": "ProvidePsks",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "Tunnel1Psk",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "Tunnel2Psk",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "TunnelLogGroupName",
+    "ParameterValue": "/aws/vpn/tunnels"
+  },
+  {
+    "ParameterKey": "TunnelLogRetentionDays",
+    "ParameterValue": "14"
+  },
+  {
+    "ParameterKey": "OnPremAmiId",
+    "ParameterValue": "ami-05996133630c56656"
+  }
+]

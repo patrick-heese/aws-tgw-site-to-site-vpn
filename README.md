@@ -1,15 +1,20 @@
 # AWS TGW Site-to-Site VPN (pfSense)  
+Dual-tunnel IPSec to TGW with BGP route propagation; signals: failover tested, private-only workloads.  
+
 A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network using a **pfSense** router (EC2) and a private on-prem server, and connects it to an **AWS VPC** over **two IPsec tunnels** with **BGP (FRR)** and **ECMP**. All AWS resources are deployed via a single **CloudFormation** template. The exact **pfSense** GUI steps to bring up the VPN and verify routing end-to-end are provided. After deployment and setup, the **IPsec** tunnels are **Established/Installed**, BGP neighbors are **Established** with **PfxRcd=1 / PfxSnt=2**, and pings to the AWS private instance succeed via the TGW.  
+
+[![infra-ci](https://github.com/patrick-heese/aws-tgw-site-to-site-vpn/actions/workflows/infra-ci.yml/badge.svg)](https://github.com/patrick-heese/aws-tgw-site-to-site-vpn/actions/workflows/infra-ci.yml)  
 
 ## Architecture Overview  
 ![Architecture Diagram](assets/architecture-diagram.png)  
 *Figure 1: Architecture diagram of the TGW Site-to-Site VPN with pfSense (simulated on-prem) and ECMP over two IPsec tunnels*  
 
+### Core Components
 - **AWS VPC (10.0.0.0/16)** – Two subnets host the **TGW VPC attachment** and a private **test EC2** instance.  
 - **AWS Transit Gateway (ASN 64512)** – Central routing hub; **default association/propagation** enabled. The VPN terminates on a Transit Gateway so multiple VPCs and sites can share a central routing hub without point-to-point sprawl.  
 - **Site-to-Site VPN (2 tunnels)** – **IKEv2**, AES-GCM/SHA2, DH 14/16, **NAT-T** on UDP/4500.  
 - **pfSense (ASN 65010)** – Acts as **Customer Gateway**; two **VTI/route-based** Phase 2s:  
-    - **Tunnel 1:** CGW inside `169.254.110.2/30` ↔ AWS inside `169.254.110.1/30`  
+	- **Tunnel 1:** CGW inside `169.254.110.2/30` ↔ AWS inside `169.254.110.1/30`  
 	- **Tunnel 2:** CGW inside `169.254.111.2/30` ↔ AWS inside `169.254.111.1/30`  
 - **BGP (FRR on pfSense)** – Neighbors `169.254.110.1` & `169.254.111.1` exchange routes; on-prem advertises `192.168.0.0/24` and `192.168.1.0/24`, learns `10.0.0.0/16` from AWS.  
 - **ECMP** – pfSense learns `10.0.0.0/16` with two `equal-cost next hops` (both tunnels) for resilience.  
@@ -38,37 +43,31 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 - **Other Tools:** AWS CLI, Windows OpenSSH (PowerShell), pfSense UI/CLI  
 
 ## Deployment Instructions  
-> **Note:** All examples use `PowerShell` syntax. On bash, replace backticks ``(`)`` with `\` or put all arguments on one line.  
+> **Note:** Many commands are identical across shells; the main differences are line continuation (PowerShell: `` ` `` • Bash: `\` • cmd.exe: `^`), environment variables (PowerShell: `$env:NAME=...` • Bash: `NAME=...` • cmd.exe: `set NAME=...`), and path separators.  
 
 1. In the AMI Catalog in the AWS Management Console, subscribe to Netgate pfSense Plus (x86_64) in your Region and copy the AMI ID. This will be used for the OnPremAmiId parameter when deploying via CloudFormation.  
 
 ### CloudFormation  
 2. Clone this repository.  
 
-3. Edit the `template.yaml` file to customize the deployment.  
-   - `ProjectName`: Controls the naming of resources created in the template.  
-   - `SimulateOnPrem`: If `true`, deploys a simulated on-prem environment (pfSense + private server).  
-   - `AdminCidr`: Your public /32 IP address used to allow pfSense UI/SSH access.  
-   - `KeyPairName`: EC2 key pair for pfSense/on-prem server SSH (optional, but recommended). Create under EC2 → Key Pairs.  
-   - `OnPremAmiId`: Netgate pfSense AMI ID for your region (from Step 1).  
-   - `ProvidePsks`: If `false` (default), AWS generates PSKs; if `true`, supply `Tunnel1Psk` and `Tunnel2Psk`.  
-   - `EnableAcceleration`: Enables AWS Accelerated VPN (uses nearby AWS edge via Global Accelerator).  
+3. Edit the `params.json` and `tgw-vpn-cfn.yaml` files to customize the deployment.  
+	- `ProjectName`: Controls the naming of resources created in the template.  
+	- `SimulateOnPrem`: If `true`, deploys a simulated on-prem environment (pfSense + private server).  
+	- `AdminCidr`: Your public /32 IP address used to allow pfSense UI/SSH access.  
+	- `KeyPairName`: EC2 key pair for pfSense/on-prem server SSH (optional). Create under EC2 → Key Pairs. Set to `NONE` to disable SSH key injection.
+	- `OnPremAmiId`: Netgate pfSense AMI ID for your region (from Step 1).  
+	- `ProvidePsks`: If `false` (default), AWS generates PSKs; if `true`, supply `Tunnel1Psk` and `Tunnel2Psk`.  
+	- `EnableAcceleration`: Enables AWS Accelerated VPN (uses nearby AWS edge via Global Accelerator).  
 
 4. Deploy the CloudFormation stack:  
-    ```powershell
+	```powershell
 	cd cloudformation
 	aws cloudformation deploy `
 	--stack-name s2s-tgw-sim `
-	--template-file template.yaml `
+	--template-file tgw-vpn-cfn.yaml `
 	--capabilities CAPABILITY_NAMED_IAM `
-	--parameter-overrides `
-		ProjectName=s2s-tgw-sim `
-		SimulateOnPrem=true `
-		AdminCidr=<YOUR_PUBLIC_IP>/32 `
-		KeyPairName=<YOUR_KEYPAIR_NAME> `
-		OnPremAmiId=<PFSENSE_AMI_ID> `
-		ProvidePsks=false `
-		EnableAcceleration=false
+	--parameter-overrides file://params.json`
+	--tags Project=aws-tgw-site-to-site-vpn
 	```
 
 5. Collect stack outputs:  
@@ -80,7 +79,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 	```
 	
 6. Download AWS VPN configuration from Console → VPC → Site-to-Site VPN connections → your **VpnConnectionId** → **Download configuration** (Generic / IKEv2). Note for each tunnel:  
-    - **AWS outside IPs** (the TGW endpoint public IPs; e.g., `34.193.9.171`, `98.80.95.11`)  
+	- **AWS outside IPs** (the TGW endpoint public IPs; e.g., `34.193.9.171`, `98.80.95.11`)  
 	- **PSKs** (if AWS-generated)  
 	- **Inside /30s** and **BGP neighbors** (e.g., `169.254.110.1` / `169.254.111.1`), **ASNs** (e.g., AWS `64512`, Customer `65010`)  
 
@@ -89,7 +88,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 	- SSH to the instance console, select **(8) Shell**, and run `cat /etc/motd-passwd` to print the current admin password.  
 
 8. Configure IPsec (two tunnels). Complete the Phase 1 and Phase 2 configuration for each tunnel. The default settings can be used for any setting not mentioned. Navigate to pfSense → VPN → IPsec → Tunnels.  
-    - **Phase 1**- Select **Add P1**  
+	- **Phase 1**- Select **Add P1**  
 		- **Description:** Name of tunnel (e.g., P1 Tunnel #1)  
 		- **Key Exchange:** IKEv2  
 		- **Internet Protocol:** IPv4  
@@ -116,7 +115,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 	- Click **Apply Changes** at the top of the Tunnels page.  
 	- **Verify:** Status → IPsec shows **Phase 1 Established** + **Phase 2 Installed** for both tunnels.  
 	
-9. 	Configure Interface Assignments. Navigate to pfSense → Interfaces → Assignments.  
+9. Configure Interface Assignments. Navigate to pfSense → Interfaces → Assignments.  
 	- **Add:** ipsec2 (IPsec VTI)  
 		- Select the interface, Select **Enable**, enter a name (e.g., ipsec2), and set MTU to 1436. VTIs do not need addresses in pfSense.  
 		- Ensure the checkboxes in the Reserved Networks section are left unchecked.  
@@ -135,7 +134,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 		- **Add:** **ICMP**- Action: Pass, Interface: IPsec, Protocol: ICMP, ICMP Subtypes: Any, Source: Network- 192.168.1.0/24, Destination: 10.0.0.0/16. **Save**.  
 		- Click ** Apply Changes** at the top of the IPsec Firewall Rules page.  
 	- Navigate to pfSense → Firewall → Rules → Floating  
-		- Add a **Quick** pass rule on **WAN**- Direction: In, Protocol: ICMP, Source: 192.168.1.0/24, Destination: 10.0.0.0/16, Disable reply-to checked, Log enabled. **Save** and **Apply Changes**.
+		- Add a **Quick** pass rule on **WAN**- Direction: In, Protocol: ICMP, Source: 192.168.1.0/24, Destination: 10.0.0.0/16, Disable reply-to checked, Log enabled. **Save** and **Apply Changes**.  
 	- **NAT note:** With route-based (VTI) IPsec, on-prem ↔ VPC traffic must **not** be NATed. Leave Outbound NAT in its default mode or, if you use Manual/Hybrid, ensure there’s a top-of-list **Do not NAT** rule for 192.168.1.0/24 → 10.0.0.0/16.  
 
 11. Enable **FRR** and configure **BGP**.  
@@ -164,7 +163,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 		- **Save** both neighbors.  
 	- **ECMP note:** If `show ip route 10.0.0.0/16` does not display two next-hops when testing, enable Services → FRR BGP → Advanced → Multipath Relax and apply. Most installs learn ECMP to TGW without additional tuning.  
 	
-**Note:** Ensure the AWS CLI user (`aws configure`) or CloudFormation assumed role is configured  with credentials that have sufficient permissions to manage **CloudWatch Logs**, **Customer Gateways**, **EC2**, **EIPs**, **Route Tables**, **Security Groups**, **Site-to-Site VPNs**, **Subnets**, **Transit Gateways**, **VPCs**, and **IAM resources**.  
+> **Note**: Ensure the AWS CLI user (`aws configure`) or CloudFormation assumed role has sufficient permissions to manage **CloudWatch Logs**, **Customer Gateways**, **EC2**, **EIPs**, **Route Tables**, **Security Groups**, **Site-to-Site VPNs**, **Subnets**, **Transit Gateways**, **VPCs**, and **IAM resources**.  
 
 ## How to Use  
 1. **Deploy the infrastructure** using CloudFormation and configure IPsec/BGP using the pfSense UI.  
@@ -196,7 +195,7 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 		- **Source:** `WAN`  
 		- **Host:** `AwsTestInstancePrivateIp` from stack outputs (e.g., 10.0.0.253).  
 		- Expect replies (0% loss).  
-	- Navigate to System → Advanced, check **Enable ssh-agent forwarding support**, and click **Save**. Ping the on-prem server (192.168.1.60) via an SSH jump through the pfSense router. Enter the admin password when prompted.
+	- Navigate to System → Advanced, check **Enable ssh-agent forwarding support**, and click **Save**. Ping the on-prem server (192.168.1.60) via an SSH jump through the pfSense router. Enter the admin password when prompted.  
 		```powershell
 		ssh -J admin@<OnPremRouterEip> -i "C:\path\to\your\key.pem" ec2-user@<OnPremServerPrivateIp>
 		
@@ -210,52 +209,49 @@ A **Transit Gateway–based** Site-to-Site VPN that simulates an on-prem network
 ## Project Structure  
 ```plaintext
 aws-tgw-site-to-site-vpn
+├── .github/                             
+│   └── workflows/                       
+│       └── infra-ci.yml                 # Caller workflow → reusable IaC Gate
 ├── assets/                              # Images, diagrams, screenshots
 │   ├── architecture-diagram.png         # Project architecture diagram
 │   ├── pfsense-ipsec-status.png         # P1/P2 Established/Installed
-│   ├── ipsec-statusall.png       		 # CLI: ipsec statusall (Established)
-│   ├── frr-bgp-summary.png 	         # CLI: show bgp summary (2 neighbors)
-│   ├── frr-adv-routes.png         		 # CLI: advertised-routes (2 on-prem /24s)
-│   ├── tgw-propagations.png     	     # AWS TGW route table propagations
-│   ├── onprem-ping-aws.png         	 # CLI: ping 10.0.0.253 from 192.168.1.60
+│   ├── ipsec-statusall.png              # CLI: ipsec statusall (Established)
+│   ├── frr-bgp-summary.png              # CLI: show bgp summary (2 neighbors)
+│   ├── frr-adv-routes.png               # CLI: advertised-routes (2 on-prem /24s)
+│   ├── tgw-propagations.png             # AWS TGW route table propagations
+│   ├── onprem-ping-aws.png              # CLI: ping 10.0.0.253 from 192.168.1.60
 │   └── frr-bgp-route-lookup.png         # CLI: show ip bgp/route 10.0.0.0/16 (ECMP)
 ├── cloudformation/                      # CloudFormation template
-│   └── template.yaml					 # Main CloudFormation template
-├── LICENSE
-├── README.md
-└── .gitignore
+│   ├── tgw-vpn-cfn.yaml                 # Main CloudFormation template
+│   └── params.json                      # Parameter values for CloudFormation
+├── LICENSE                              
+├── README.md                            
+└── .gitignore                           
 ```  
 
 ## Screenshots  
-![pfSense IPsec overview showing two tunnels with Phase 1 Established and Phase 2 Installed](assets/pfsense-ipsec-status.png)   
-
+![pfSense IPsec overview showing two tunnels with Phase 1 Established and Phase 2 Installed](assets/pfsense-ipsec-status.png)  
 *Figure 2: Both Phase 1 and Phase 2 SAs are established/installed for the two VPN tunnels.*  
 
 ![Terminal displaying strongSwan “ipsec statusall” with established SAs](assets/ipsec-statusall.png)  
-
 *Figure 3: CLI output confirming both IKE_SA and CHILD_SA are Established for Tunnel 1 and Tunnel 2.*  
 
 ![Terminal showing FRR BGP summary with two established neighbors](assets/frr-bgp-summary.png)  
-
 *Figure 4: FRR BGP summary: two neighbors Established; each shows PfxRcd=1 and PfxSnt=2.*  
 
 ![Terminal output of FRR “show ip bgp neighbors … advertised-routes”](assets/frr-adv-routes.png)  
-
 *Figure 5: Routes advertised to AWS over both neighbors: 192.168.0.0/24 and 192.168.1.0/24 only.*  
 
-![AWS console screenshot of TGW route table propagations list](assets/tgw-propagations.png)   
-
+![AWS console screenshot of TGW route table propagations list](assets/tgw-propagations.png)  
 *Figure 6: TGW route table shows propagations from both the VPC and the VPN attachment.*  
 
 ![Terminal output of ping with 0% packet loss to 10.0.0.253](assets/onprem-ping-aws.png)  
-
 *Figure 7: On-prem server (192.168.1.60) successfully pings AWS instance (10.0.0.253).*  
 
-![FRR BGP route lookup for 10.0.0.0/16 showing two equal-cost paths and OS route with dual next-hops](assets/frr-bgp-route-lookup.png)
+![FRR BGP route lookup for 10.0.0.0/16 showing two equal-cost paths and OS route with dual next-hops](assets/frr-bgp-route-lookup.png)  
+*Figure 8: FRR shows two valid eBGP paths to 10.0.0.0/16 (via 169.254.110.1 and 169.254.111.1), both marked multipath. The kernel installs both next hops over IPsec VTIs (ECMP). “Not advertised to any peer” is expected because the AWS VPC CIDR isn’t exported.*  
 
-*Figure 8: FRR shows two valid eBGP paths to 10.0.0.0/16 (via 169.254.110.1 and 169.254.111.1), both marked multipath. The kernel installs both next hops over IPsec VTIs (ECMP). “Not advertised to any peer” is expected because the AWS VPC CIDR isn’t exported.*
-
-## Future Enhancements   
+## Future Enhancements  
 - **Dynamic Failover Demos:** Toggle one tunnel down and capture BGP/route changes.  
 - **CloudWatch Alarms:** VPN tunnel state + TGW metrics with SNS notifications.  
 - **Automation:** pfSense API/backup to script P1/P2+BGP provisioning.  
@@ -275,4 +271,4 @@ Cloud Administrator | Aspiring Cloud Engineer/Architect
 ## Acknowledgments  
 This project was inspired by a course from [acantril](https://github.com/acantril/learn-cantrill-io-labs/tree/master/aws-simple-site2site-vpn).  
 The architecture diagram included here is my own version, adapted from the original course diagram.  
-I designed and developed all Infrastructure-as-Code (CloudFormation) and project documentation.  
+I designed and developed all Infrastructure as Code (CloudFormation) and project documentation.  

@@ -21,9 +21,9 @@ Parameters:
     Description: CIDR allowed to access the pfSense UI/SSH (use your /32 for security).
 
   KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: ''
-    Description: Optional EC2 key pair name for SSH (pfSense or on-prem server).
+    Type: String
+    Default: NONE
+    Description: Optional EC2 key pair name for SSH (pfSense or on-prem server). Use NONE to disable SSH key injection.
 
   # AWS side
   VpcCidr:
@@ -141,7 +141,7 @@ Conditions:
   HasKeyPair: !Not
     - !Equals
       - !Ref KeyPairName
-      - ''
+      - 'NONE'
 
 Resources:
   # ------------------------
@@ -622,7 +622,7 @@ Outputs:
   OnPremRouterUiUrl:
     Condition: DoSimOnPrem
     Value: !Sub 'https://${OnPremRouterEip.PublicIp}'
-    Description: pfSense Web UI (allowlisted by AdminCidr)
+    Description: pfSense Web UI (allowed by AdminCidr)
 
   OnPremServerPrivateIp:
     Condition: DoSimOnPrem
